@@ -65,7 +65,7 @@ function f2m_all ()
     local MP3
     for ARG in "$@" ; do
 	if [ -d "$ARG" ] ; then
-	    find "$ARG" -name '*'."$FLACEXT" -printf '%P\0' | {
+	    find "$ARG" -name '*'."$FLACEXT" -printf '%P\0' | sort -z | {
 		local DIR
 		while read -d $'\0' FLC ; do
 		    DIR=$(basename "$ARG")/$(dirname "$FLC")
