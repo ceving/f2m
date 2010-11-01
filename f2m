@@ -1,0 +1,127 @@
+#! /bin/bash
+##
+## Convert FLAC files into MP3 format.
+##
+## Sascha Ziemann <ceving@gmail.com>
+##
+
+set -eu
+
+# Terminate program in case of fatal errors.
+function die () { echo "$0: ERROR: $*" >&2 ; exit 1 ; }
+
+# Report a warning message.
+function warn () { echo "$0: ERROR: $*" >&2 ; }
+
+# Default parameters.
+declare FLAC=flac
+declare METAFLAC=metaflac
+declare LAME=lame
+declare FLACEXT=flac
+declare MP3EXT=mp3
+declare -i BITRATE=192
+
+# Convert a single flac file
+function f2m_one ()
+{
+    local FLC=$1
+    local MP3=$2
+    [ -r "$FLC" ] || die "Can not read '$FLC'!"
+    $METAFLAC --export-tags-to=- "$FLC" | {
+	local OIFS
+	local VALUE
+	local TAG
+	local TITLE
+	local ARTIST
+	local ALBUM
+	local DATE
+	local TRACKNUMBER
+        while read -d \= TAG ; do 
+	    OIFS=$IFS
+	    IFS=''
+	    read VALUE
+	    IFS=$OIFS
+	    case $TAG in
+                TITLE)	     TITLE=$VALUE ;;
+                ARTIST)      ARTIST=$VALUE ;;
+                ALBUM)       ALBUM=$VALUE ;;
+                DATE)        DATE=$VALUE ;;
+                TRACKNUMBER) TRACKNUMBER=$VALUE ;;
+	    esac
+        done
+        echo -n "Converting '$FLC' ..."
+        $FLAC -dcs "$FLC" \
+	    | $LAME -S -b $BITRATE -h --tt "$TITLE" --tn "$TRACKNUMBER" \
+	    --ty "$DATE" --ta "$ARTIST" --tl "$ALBUM" --add-id3v2 - "$MP3"
+        echo ' done'
+    }
+}
+
+# Convert a list of files and recurse into each directory.
+function f2m_all ()
+{
+    local ARG
+    local FLC
+    local MP3
+    for ARG in "$@" ; do
+	if [ -d "$ARG" ] ; then
+	    find "$ARG" -name '*'."$FLACEXT" -printf '%P\0' | {
+		local DIR
+		while read -d $'\0' FLC ; do
+		    DIR=$(basename "$ARG")/$(dirname "$FLC")
+		    [ -d "$DIR" ] || mkdir -p -- "$DIR"
+		    MP3="$DIR"/$(basename -- "$FLC" ."$FLACEXT")."$MP3EXT"
+		    f2m_one "$ARG/$FLC" "$MP3"
+		done
+	    }
+	elif [ -f "$ARG" ] ; then
+	    MP3=$(basename -- "$ARG" ."$FLACEXT")."$MP3EXT"
+	    f2m_one "$ARG" "$MP3"
+	else
+	    warn "Invalid file: '$ARG'"
+	fi
+    done
+}
+
+# Display Usage
+function usage () 
+{
+    echo "Usage: f2m [OPTIONS] ARGUMENTS
+Options:
+  -h             Display usage.
+  -b BITRATE     Convert MP3 files with the specified bitrate. Default: 192
+  -f EXTENSION   Specify the extension for Flac files. Default: flac
+  -m EXTENSION   Specify the extension for MP3 files. Default: mp3
+  -d FLAC        Specify the path to the Flac binary. Default: flac
+  -e LAME        Specify the path to the Lame binary. Default: lame
+  -t METAFLAC    Specify the path to the Metaflac binary: Default: metaflac
+Arguments:
+  Specify a list of Flac files or directories.  MP3 files are 
+  generated in the current directory.  If the argument list
+  contains a directory with Flac files a corresponding directory
+  with the same name will be created for the MP3 files in the
+  current directory."
+}
+
+if [ -z "$*" ] ; then
+    usage
+    exit
+fi
+
+# Read command line arguments.
+while getopts "hb:f:m:" OPTION ; do
+    case $OPTION in
+	h) usage ; exit ;;
+	b) BITRATE=$OPTARG ;;
+	f) FLACEXT=$OPTARG ;;
+	m) MP3EXT=$OPTARG ;;
+	d) FLAC=$OPTARG ;;
+	e) LAME=$OPTARG ;;
+	t) METAFLAC=$OPTARG ;;
+	*) die 'Use -h for help.' ;;
+    esac
+done
+shift $(($OPTIND - 1))
+
+# Main
+f2m_all "$@"
